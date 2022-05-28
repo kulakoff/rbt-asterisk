@@ -87,9 +87,15 @@ ami.on('contactstatus', e => {
                 case 'pn-type':
                     type = p[1];
                     break;
+                case 'pn-prid':
+                    token = p[1];
+                    break;
+                case 'pn-provider':
+                    type = p[1];
+                    break;
             }
         }
-        if (token && type == 'firebase') {
+        if (token && (type === 'firebase' || type === 'fcm')) {
             contacts[e.aor] = token;
             console.log(e.aor, token);
             redis.set('contacts', JSON.stringify(contacts));
