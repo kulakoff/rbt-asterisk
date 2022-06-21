@@ -4,4 +4,3 @@ sudo zypper in -y libedit-devel libxml2-devel xmlstarlet lua54-devel libcurl-dev
 sudo luarocks-5.4 install luasec
 sudo luarocks-5.4 install inspect
 
-

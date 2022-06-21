@@ -1,83 +1,68 @@
-package.path = "/opt/domophone/?.lua;/tmp/?.lua;/opt/domophone/lua/?.lua;"..package.path
+package.path = "./live/etc/asterisk/lua/?.lua;"..package.path
 
-key = '5251ce6649ef34e87e18e3bbbdceea27'
+dm_server = "http://127.0.0.1:8000/server/asterisk/extensions.php"
 
-log = require 'log'
-md5 = (require 'md5').sumhexa
-luasql_mysql = require 'luasql.mysql'
-inspect = require 'inspect'
-http = require 'socket.http'
-https = require 'ssl.https'
+log = require "log"
+inspect = require "inspect"
+http = require "socket.http"
+ltn12 = require "ltn12"
+cjson = require "cjson"
 
-log.outfile = "/var/log/asterisk/pbx_lua.log"
+log.outfile = "/tmp/pbx_lua.log"
 
--- Encodes a character as a percent encoded string
-function char_to_pchar(c)
-    return string.format("%%%02X", c:byte(1, 1))
-end
+function dm(action, request)
+    local body = {}
 
--- encodeURI replaces all characters except the following with the appropriate UTF-8 escape sequences:
--- ; , / ? : @ & = + $
--- alphabetic, decimal digits, - _ . ! ~ * ' ( )
--- #
-function encodeURI(str)
-    return (str:gsub("[^%;%,%/%?%:%@%&%=%+%$%w%-%_%.%!%~%*%'%(%)%#]", char_to_pchar))
-end
-
--- encodeURIComponent escapes all characters except the following: alphabetic, decimal digits, - _ . ! ~ * ' ( )
-function encodeURIComponent(str)
-    return (str:gsub("[^%w%-_%.%!%~%*%'%(%)]", char_to_pchar))
-end
-
-function mysql_connect()
-    if not mysql_con then
-        pcall(function ()
-            mysql_con = luasql_mysql.mysql():connect("asterisk", "root", "qqq")
-            mysql_con:execute("set names utf8mb4")
-        end)
+    if not request then
+        request = ""
     end
+
+    local r = cjson.encode(request)
+
+    http.request {
+        method = "POST",
+        url = dm_server .. "/" .. action,
+        source = ltn12.source.string(r),
+        headers = {
+            ["content-type"] = "application/json",
+            ["content-length"] = r:len()
+        },
+        sink = ltn12.sink.table(body)
+    }
+
+    response = table.concat(body)
+
+    return cjson.decode(response)
 end
 
-function mysql_query(sql)
-    mysql_connect()
-    local qr = mysql_con:execute(sql)
-    if not qr then
-        log_debug("error in query: "..sql)
-        return false
-    end
-    if type(qr) == "number" then
-        return qr
-    end
-    if type(qr) == "userdata" then
-        return qr:fetch({}, "a"), qr
-    end
-    log_debug("unknown result type ("..type(qr)..") from query ["..sql.."]")
-end
-
-function mysql_result(sql, default)
-    local row = mysql_query(sql)
-    if row then
-        for k, v in pairs(row) do
-            return v
-        end
-    else
-        return default
-    end
-end
+-- print("****************************")
+-- print(dm("get", {
+--     data = false,
+-- }).a)
+-- print("****************************")
 
 function log_debug(v)
-    local l = channel.CDR("linkedid"):get()
-    local u = channel.CDR("uniqueid"):get()
-    local i
-    if l ~= u then
-        i = l..": "..u
-    else
-        i = u
+    local m = ""
+
+    if channel ~= nil then
+        local l = channel.CDR("linkedid"):get()
+        local u = channel.CDR("uniqueid"):get()
+        local i
+        if l ~= u then
+            i = l .. ": " .. u
+        else
+            i = u
+        end
+        m = i .. ": "
     end
-    local m = i..": "..inspect(v)
+
+    m = m .. inspect(v)
+
     log.debug(m)
-    http.request("http://127.0.0.1:8081/pbx?msg="..encodeURIComponent(m))
+    dm("log", m)
 end
+
+log_debug("init...")
 
 function round(num, numDecimalPlaces)
     local mult = 10^(numDecimalPlaces or 0)
@@ -144,13 +129,26 @@ end
 
 function push(token, type, platform, extension, hash, caller_id, flat_id, dtmf, phone)
     local flat_number = mysql_result("select flat_number from dm.flats where flat_id = "..flat_id)
-    if (phone) then
+
+    if phone then
         log_debug("sending push for: "..extension.." ["..phone.."] ("..type..", "..platform..")")
-        http.request("http://127.0.0.1:8082/push?token="..encodeURIComponent(token).."&type="..type.."&platform="..platform.."&extension="..extension.."&hash="..hash.."&caller_id="..encodeURIComponent(tostring(caller_id)).."&flat_id="..flat_id.."&dtmf="..encodeURIComponent(dtmf).."&phone="..phone.."&uniq="..channel.CDR("uniqueid"):get().."&flat_number="..flat_number)
     else
         log_debug("sending push for: "..extension.." ("..type..", "..platform..")")
-        http.request("http://127.0.0.1:8082/push?token="..encodeURIComponent(token).."&type="..type.."&platform="..platform.."&extension="..extension.."&hash="..hash.."&caller_id="..encodeURIComponent(tostring(caller_id)).."&flat_id="..flat_id.."&dtmf="..encodeURIComponent(dtmf).."&uniq="..channel.CDR("uniqueid"):get().."&flat_number="..flat_number)
     end
+
+    dm("push", {
+        token = token,
+        type = type,
+        platform = platform,
+        extension = extension,
+        hash = hash,
+        caller_id = caller_id,
+        flat_id = flat_id,
+        dtmf = dtmf,
+        phone = phone,
+        uniq = channel.CDR("uniqueid"):get(),
+        flat_number = flat_number
+    })
 end
 
 function camshow(domophone_id)
