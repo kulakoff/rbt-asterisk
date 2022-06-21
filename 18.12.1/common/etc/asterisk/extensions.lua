@@ -1,4 +1,4 @@
-package.path = "./live/etc/asterisk/lua/?.lua;"..package.path
+package.path = "/etc/asterisk/lua/?.lua;./live/etc/asterisk/lua/?.lua;" .. package.path
 
 dm_server = "http://127.0.0.1:8000/server/asterisk/extensions.php"
 
