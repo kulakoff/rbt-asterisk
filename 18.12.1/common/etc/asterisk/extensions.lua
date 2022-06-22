@@ -1,14 +1,16 @@
 package.path = "/etc/asterisk/lua/?.lua;./live/etc/asterisk/lua/?.lua;" .. package.path
 
 dm_server = "http://127.0.0.1:8000/server/asterisk/extensions.php"
+log_file = "/tmp/pbx_lua.log"
 
 log = require "log"
 inspect = require "inspect"
 http = require "socket.http"
 ltn12 = require "ltn12"
 cjson = require "cjson"
+md5 = (require 'md5').sumhexa
 
-log.outfile = "/tmp/pbx_lua.log"
+log.outfile = log_file
 
 function dm(action, request)
     local body = {}
@@ -94,17 +96,15 @@ function checkin()
 end
 
 function autoopen(flat_id, domophone_id)
-    local ao1 = mysql_result("select count(*) from dm.autoopen where flat_id="..flat_id)
-    local ao2 = mysql_result("select addtime(date, concat('00:', lpad(white_rabbit, 2, '0'), ':00')) > now() as autoopen from dm.flats left join dm.domophones using (domophone_id) left join dm.white_rabbit on domophones.ip=white_rabbit.domophone_ip and flat_number=apartment where white_rabbit and date is not null and flat_id="..flat_id)
-    if (ao1 and tonumber(ao1) > 0) or (ao2 and tonumber(ao2) > 0) then
+    -- TODO get autoopen status from dm
+    local autoopen = false
+    -- TODO get dtmf for domophone from dm
+    local dtmf = "1"
+    if autoopen then
         log_debug("autoopen: yes")
         app.Wait(2)
         app.Answer()
         app.Wait(1)
-        local dtmf = mysql_result("select dtmf from dm.domophones where domophone_id="..domophone_id)
-        if not dtmf or dtmf == '' then
-            dtmf = '1'
-        end
         app.SendDTMF(dtmf, 25, 500)
         app.Wait(1)
         return true
@@ -114,7 +114,9 @@ function autoopen(flat_id, domophone_id)
 end
 
 function blacklist(flat_id)
-    if tonumber(mysql_result("select count(*) from dm.blacklist where flat_id="..flat_id)) > 0 then
+    -- TODO get blacklist (block) status from dm
+    local blacklist = false
+    if blacklist then
         log_debug("blacklist: yes")
         app.Answer()
         app.Wait(2)
@@ -128,7 +130,8 @@ function blacklist(flat_id)
 end
 
 function push(token, type, platform, extension, hash, caller_id, flat_id, dtmf, phone)
-    local flat_number = mysql_result("select flat_number from dm.flats where flat_id = "..flat_id)
+    -- TODO get flat_number by flat_id from dm
+    local flat_number = "1"
 
     if phone then
         log_debug("sending push for: "..extension.." ["..phone.."] ("..type..", "..platform..")")
@@ -147,7 +150,7 @@ function push(token, type, platform, extension, hash, caller_id, flat_id, dtmf, 
         dtmf = dtmf,
         phone = phone,
         uniq = channel.CDR("uniqueid"):get(),
-        flat_number = flat_number
+        flat_number = flat_number,
     })
 end
 
@@ -155,12 +158,16 @@ function camshow(domophone_id)
     local hash = channel.HASH:get()
 
     if hash == nil then
-        hash = md5(domophone_id..os.time())
+        hash = md5(domophone_id .. os.time())
 
         channel.HASH:set(hash)
 
-        https.request{ url = "https://dm.lanta.me:443/sapi?key="..key.."&action=camshot&domophone_id="..domophone_id.."&hash="..hash }
-        mysql_query("insert into dm.live (token, domophone_id, expire) values ('"..hash.."', '"..domophone_id.."', addtime(now(), '00:03:00'))")
+        dm("camshot", {
+            domophone_id = domophone_id,
+            hash = hash,
+        })
+--        https.request{ url = "https://dm.lanta.me:443/sapi?key="..key.."&action=camshot&domophone_id="..domophone_id.."&hash="..hash }
+--        mysql_query("insert into dm.live (token, domophone_id, expire) values ('"..hash.."', '"..domophone_id.."', addtime(now(), '00:03:00'))")
     end
 
     return hash
