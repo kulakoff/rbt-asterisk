@@ -197,13 +197,13 @@ end
 
 function mobile_intercom(flat_id, domophone_id)
     local extension, res, caller_id
-    local intercoms, qr = mysql_query("select token, type, platform, phone from dm.intercoms where flat_id="..flat_id)
     local dtmf = mysql_result("select dtmf from dm.domophones where domophone_id="..domophone_id)
     if not dtmf or dtmf == '' then
         dtmf = ''
     end
     local hash = camshow(domophone_id)
     caller_id = channel.CALLERID("name"):get()
+    local intercoms, qr = mysql_query("select token, type, platform, phone from dm.intercoms where flat_id="..flat_id)
     while intercoms do
         intercoms['phone'] = replace_char(intercoms['phone'], 1, '7')
         extension = tonumber(mysql_result("select dm.autoextension()")) + 2000000000
