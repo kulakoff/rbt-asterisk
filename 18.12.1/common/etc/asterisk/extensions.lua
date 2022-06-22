@@ -207,6 +207,19 @@ function mobile_intercom(flat_id, domophone_id)
     while intercoms do
         intercoms['phone'] = replace_char(intercoms['phone'], 1, '7')
         extension = tonumber(mysql_result("select dm.autoextension()")) + 2000000000
+        --[[
+            Redis database for user authentication and peer permissions
+            has the following schema:
+
+            1) For the long-term credentials there must be keys
+            "turn/realm/<realm-name>/user/<username>/key" and the values must be
+            the hmackeys which is an md5 hash of "<username>:<realm-name>:<password>"
+            (See STUN RFC: https://tools.ietf.org/html/rfc5389#page-35).
+            For example, for the user "gorst", realm "north.gov"
+            and password "hero", there must be key "turn/realm/north.gov/user/gorst/key"
+            and the value should be md5 hash of "gorst:north.gov:hero"
+            which will result in "7da2270ccfa49786e0115366d3a3d14d".
+        --]]
         mysql_query("insert into dm.turnusers_lt (realm, name, hmackey, expire) values ('dm.lanta.me', '"..extension.."', md5(concat('"..extension.."', ':', 'dm.lanta.me', ':', '"..hash.."')), addtime(now(), '00:03:00'))")
         mysql_query("insert into ps_aors (id, max_contacts, remove_existing, synchronized, expire) values ('"..extension.."', 1, 'yes', true, addtime(now(), '00:03:00'))")
         mysql_query("insert ignore into ps_auths (id, auth_type, password, username, synchronized) values ('"..extension.."', 'userpass', '"..hash.."', '"..extension.."', true)")
