@@ -34,7 +34,11 @@ function dm(action, request)
 
     response = table.concat(body)
 
-    return cjson.decode(response)
+    if response ~= "" then
+        return cjson.decode(response)
+    else
+        return false
+    end
 end
 
 -- print("****************************")
@@ -207,6 +211,10 @@ function mobile_intercom(flat_id, domophone_id)
     return res
 end
 
+function flat_call(flat_id)
+    --
+end
+
 extensions = {
 
     [ "default" ] = {
@@ -306,10 +314,11 @@ extensions = {
                 log_debug(channel.CALLERID("num"):get().." >>> "..flat['flat_number'].."@"..string.format("1%05d", flat['domophone_id']))
                 app.Dial("PJSIP/"..flat['flat_number'].."@"..string.format("1%05d", flat['domophone_id']), 120)
             end
+
             app.Hangup()
         end,
 
-        -- вызов на стационарные интеркомы
+        -- вызов на стационарные IP интеркомы
         [ "_4XXXXXXXXX" ] = function (context, extension)
             checkin()
 
@@ -329,48 +338,15 @@ extensions = {
             end
         end,
 
-        -- вызов на мобильные интеркомы (приложение)
+        -- "фиктивный" вызов на мобильные интеркомы (приложение)
         [ "_5XXXXXXXXX" ] = function (context, extension)
             checkin()
 
             log_debug("mobile intercom test call")
 
             local flat_id = tonumber(extension:sub(2))
-            local res
-            local intercoms, qr = mysql_query("select token, type, platform, phone from dm.intercoms where flat_id="..flat_id)
-            local dtmf = '1'
-            local caller_id = 'LanTa'
-            hash = md5(os.time())
 
-            while intercoms do
-                intercoms['phone'] = replace_char(intercoms['phone'], 1, '7')
-                extension = tonumber(mysql_result("select dm.autoextension()")) + 2000000000
-                mysql_query("insert into dm.turnusers_lt (realm, name, hmackey, expire) values ('dm.lanta.me', '"..extension.."', md5(concat('"..extension.."', ':', 'dm.lanta.me', ':', '"..hash.."')), addtime(now(), '00:03:00'))")
-                mysql_query("insert into ps_aors (id, max_contacts, remove_existing, synchronized, expire) values ('"..extension.."', 1, 'yes', true, addtime(now(), '00:03:00'))")
-                mysql_query("insert ignore into ps_auths (id, auth_type, password, username, synchronized) values ('"..extension.."', 'userpass', '"..hash.."', '"..extension.."', true)")
-                mysql_query("insert ignore into ps_endpoints (id, auth, outbound_auth, aors, context, disallow, allow, dtmf_mode, rtp_symmetric, force_rport, rewrite_contact, direct_media, transport, ice_support, synchronized) values ('"..extension.."', '"..extension.."', '"..extension.."', '"..extension.."', 'default', 'all', 'opus,h264', 'rfc4733', 'yes', 'yes', 'yes', 'no', 'transport-tcp', 'yes', true)")
-                mysql_query("delete from dm.voip_crutch where phone='"..intercoms['phone'].."'")
-                if tonumber(intercoms['type']) == 3 then
-                    mysql_query("insert ignore into dm.voip_crutch (id, token, hash, platform, flat_id, dtmf, phone, expire) values ('"..extension.."', '"..intercoms['token'].."', '"..hash.."', '"..intercoms['platform'].."', '"..flat_id.."', '"..dtmf.."', '"..intercoms['phone'].."', addtime(now(), '00:01:00'))")
-                    intercoms['type'] = 0
-                end
-                app.wait(2)
-                push(intercoms['token'], intercoms['type'], intercoms['platform'], extension, hash, caller_id, flat_id, dtmf, intercoms['phone'])
-                if not res then
-                    res = ""
-                end
-                res = res.."Local/"..extension
-                intercoms = qr:fetch({}, "a")
-                if intercoms then
-                    res = res.."&"
-                end
-            end
-            channel.CALLERID("name"):set(caller_id)
-            if res then
-                log_debug("dialing: "..res)
-                app.Dial(res, 90)
-            end
-            app.Hangup()
+            mobile_intercom(flat_id, -1)
         end,
 
         -- вызов на панель
@@ -389,8 +365,6 @@ extensions = {
 
             log_debug(channel.CALLERID("num"):get().." >>> 112")
 
---            app.Dial("PJSIP/112@lanta", 120)
---            app.Hangup()
             app.Answer()
             app.StartMusicOnHold()
             app.Wait(900)
@@ -402,21 +376,9 @@ extensions = {
 
             log_debug(channel.CALLERID("num"):get().." >>> 9999")
 
---            app.Dial("PJSIP/9999@lanta", 120)
---            app.Hangup()
             app.Answer()
             app.StartMusicOnHold()
             app.Wait(900)
-        end,
-
-        -- helpMe
-        [ "429999" ] = function()
-            checkin()
-
-            log_debug(channel.CALLERID("num"):get().." >>> 429999")
-
-            app.Dial("PJSIP/429999@lanta", 120, 'm')
-            app.Hangup()
         end,
 
         -- открытие ворот по звонку
@@ -478,14 +440,6 @@ extensions = {
                             end
                             if mi then -- если есть мобильные SIP интерком(ы)
                                 dest = dest.."&"..mi
-                            end
-                            -- ебучий костыль, для ебучего офиса
-                            if (flat_ext == "4000117453") or (li and li ~= "") then -- если есть стационарные SIP интерком(ы)
-                                log_debug("has local intercom: "..flat_ext)
-                                hash = camshow(domophone)
-                                channel.SHARED("HASH"):set(hash)
-                                dest = dest.."&Local/"..flat_ext.."/n"
-                                http.request("http://127.0.0.1:8085/ffmpeg?domophone="..src_domophone.."&intercom="..flat_ext)
                             end
                             if dest:sub(1, 1) == '&' then
                                 dest = dest:sub(2)
