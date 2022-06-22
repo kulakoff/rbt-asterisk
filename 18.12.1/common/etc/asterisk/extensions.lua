@@ -2,6 +2,11 @@ package.path = "/etc/asterisk/lua/?.lua;./live/etc/asterisk/lua/?.lua;" .. packa
 
 dm_server = "http://127.0.0.1:8000/server/asterisk/extensions.php"
 log_file = "/tmp/pbx_lua.log"
+redis_server = {
+    host = "127.0.0.1",
+    port = 6379,
+--    auth = "7d5c125b8be8fef0be016f2a965745e4"
+}
 
 log = require "log"
 inspect = require "inspect"
@@ -9,8 +14,21 @@ http = require "socket.http"
 ltn12 = require "ltn12"
 cjson = require "cjson"
 md5 = (require 'md5').sumhexa
+redis = require "redis"
 
 log.outfile = log_file
+
+redis = redis.connect(redis_server)
+
+if redis_server.auth ~= nil then
+    redis:auth(redis_server.auth)
+end
+
+-- client:select(15) -- for testing purposes
+--
+-- redis:setex('foo', 10, 'bar')
+-- local value = redis:get('foo')
+-- print(value)
 
 function dm(action, request)
     local body = {}
