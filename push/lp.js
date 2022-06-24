@@ -8,7 +8,7 @@ const app = require('express')();
 const redis = require("redis").createClient();
 
 admin.initializeApp({
-    credential: admin.credential.cert(require(path.join(__dirname, 'rbt-linhome-firebase-adminsdk-xx5ca-2d08c1fea5.json'))),
+    credential: admin.credential.cert(require(path.join(__dirname, 'rbt-linhome-firebase-adminsdk-xx5ca-eaf577790b.json'))),
 });
 
 ami.keepConnected();
@@ -100,6 +100,20 @@ ami.on('contactstatus', e => {
             console.log(e.aor, token);
             redis.set('contacts', JSON.stringify(contacts));
         }
+    }
+});
+
+ami.on('dtmfbegin', function (e) {
+    if (e.direction === "Sent" && e.digit !== "1") {
+	console.log(e);
+	ami.action({
+	    Action: "PlayDTMF",
+	    Channel: e.channel,
+	    Digit: "1",
+	    Duration: 2000,
+	}, function(err, res) {
+	    console.log(err, res);
+	});
     }
 });
 
